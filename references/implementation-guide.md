@@ -1,27 +1,27 @@
-# Triển khai SEO metadata trong dự án Laravel
+# Implementing SEO metadata in a Laravel project
 
-Hướng dẫn này dành cho dự án Laravel sử dụng Blade, theo mô hình server-rendered HTML. Mục tiêu là xây dựng một lớp SEO có cấu trúc, dễ kiểm thử và có thể mở rộng thay vì khai báo các mảng metadata rời rạc trong từng controller.
+This guide is for Laravel projects that use Blade to render HTML on the server. The goal is to build a structured, testable, extensible SEO layer instead of defining separate metadata arrays in each controller.
 
-Các ví dụ ưu tiên Laravel 13.x (PHP 8.3+) nhưng chủ yếu sử dụng các API Laravel phổ biến (`route()`, `asset()`, `Storage`, Blade component, route model binding) nên có thể áp dụng cho Laravel 12 với rất ít thay đổi. Khi tích hợp vào dự án đang chạy phiên bản khác, đối chiếu release/upgrade guide của phiên bản đó.
+The examples target Laravel 13.x (PHP 8.3+) but mostly use common Laravel APIs (`route()`, `asset()`, `Storage`, Blade components, and route model binding), so they can be applied to Laravel 12 with very few changes. When integrating with a project running another version, consult its release notes and upgrade guide.
 
-> Phạm vi: title, meta description, canonical, robots, Open Graph, Twitter/X Card, JSON-LD structured data, hreflang, sitemap/robots.txt, pagination, reverse proxy và automated tests.
+> Scope: title, meta description, canonical, robots, Open Graph, Twitter/X Card, JSON-LD structured data, hreflang, sitemap/robots.txt, pagination, reverse proxies, and automated tests.
 
 ---
 
-## 1. Kiến trúc đề xuất
+## 1. Proposed architecture
 
-Không nên để mỗi controller tự xây một `$meta` array khác nhau. Kiến trúc khuyến nghị:
+Avoid having each controller build its own `$meta` array. Recommended architecture:
 
 ```text
 Route
-  → Controller lấy business data
-  → SeoFactory tạo SeoData
-  → View nhận $seo
-  → <x-seo :seo="$seo" /> trong <head>
-  → HTML server trả về đầy đủ title/meta/canonical/OG/Twitter/JSON-LD
+  → Controller retrieves business data
+  → SeoFactory creates SeoData
+  → View receives $seo
+  → <x-seo :seo="$seo" /> inside <head>
+  → Server returns HTML containing all title/meta/canonical/OG/Twitter/JSON-LD metadata
 ```
 
-Cấu trúc file gợi ý:
+Suggested file structure:
 
 ```text
 config/seo.php
@@ -29,8 +29,8 @@ app/SEO/SeoData.php
 app/SEO/SeoFactory.php
 app/SEO/SeoText.php
 app/SEO/Schema/ArticleSchema.php
-app/SEO/Schema/ProductSchema.php          # nếu có sản phẩm
-app/SEO/Schema/OrganizationSchema.php     # nếu cần schema toàn site
+app/SEO/Schema/ProductSchema.php          # if the site has products
+app/SEO/Schema/OrganizationSchema.php     # if site-wide schema is needed
 app/View/Components/Seo.php
 resources/views/components/seo.blade.php
 resources/views/layouts/app.blade.php
@@ -39,13 +39,13 @@ app/Http/Controllers/HomeController.php
 app/Http/Controllers/PostController.php
 ```
 
-Nếu dự án nhỏ, có thể giản lược `SeoFactory` hoặc các schema class, nhưng nên giữ `SeoData` để contract rõ ràng và tránh typo key.
+For a small project, you can simplify `SeoFactory` or the schema classes, but keep `SeoData` to provide a clear contract and avoid misspelled keys.
 
 ---
 
-## 2. Contract dữ liệu SEO
+## 2. SEO data contract
 
-Tạo `app/SEO/SeoData.php`:
+Create `app/SEO/SeoData.php`:
 
 ```php
 <?php
@@ -75,23 +75,23 @@ final readonly class SeoData
 }
 ```
 
-### Tại sao dùng object thay array
+### Why use an object instead of an array
 
-Object giúp:
+An object provides:
 
-- tránh lỗi typo như `desciption`, `canonial`;
-- IDE/autocomplete tốt hơn;
-- dễ unit test;
-- dễ mở rộng fields;
-- controller không cần biết chi tiết render.
+- protection against typos such as `desciption` and `canonial`;
+- better IDE support and autocomplete;
+- easier unit testing;
+- easier field extension;
+- separation between controllers and rendering details.
 
-Dùng tên `canonical` thay vì `url` vì trường này biểu diễn URL chuẩn của trang. `og:url` sẽ dùng cùng giá trị canonical nếu không có lý do đặc biệt để khác.
+Use the name `canonical` instead of `url` because this field represents the canonical URL of the page. Use the same canonical value for `og:url` unless there is a specific reason to use a different one.
 
 ---
 
-## 3. Cấu hình mặc định
+## 3. Default configuration
 
-Tạo `config/seo.php`:
+Create `config/seo.php`:
 
 ```php
 <?php
@@ -106,7 +106,7 @@ return [
 
     'default_description' => env(
         'SEO_DESCRIPTION',
-        'Mô tả mặc định của website.'
+        'Default website description.'
     ),
 
     'default_image' => env(
@@ -125,13 +125,13 @@ return [
 ];
 ```
 
-`.env` production:
+Production `.env`:
 
 ```dotenv
-APP_NAME="Tên doanh nghiệp"
+APP_NAME="Business name"
 APP_URL=https://www.example.com
-SEO_TITLE="Tên doanh nghiệp"
-SEO_DESCRIPTION="Mô tả mặc định của website."
+SEO_TITLE="Business name"
+SEO_DESCRIPTION="Default website description."
 SEO_IMAGE=images/seo/default.jpg
 SEO_LOCALE=vi_VN
 SEO_ROBOTS=index,follow
@@ -139,27 +139,27 @@ SEO_TWITTER_CARD=summary_large_image
 # SEO_TWITTER_SITE=@example
 ```
 
-`.env` staging/dev:
+Staging/development `.env`:
 
 ```dotenv
 SEO_ROBOTS=noindex,nofollow
 ```
 
-Không nên phụ thuộc hoàn toàn vào `APP_ENV` để quyết định index/noindex. Dùng biến cấu hình SEO riêng giúp tránh staging bị index do cấu hình môi trường không như dự kiến.
+Do not rely entirely on `APP_ENV` to decide between index and noindex. A dedicated SEO configuration variable helps prevent staging from being indexed when the environment configuration is unexpected.
 
-Đặt ảnh mặc định tại:
+Place the default image at:
 
 ```text
 public/images/seo/default.jpg
 ```
 
-`asset()` chỉ tạo URL, không kiểm tra file tồn tại. Sau deploy phải kiểm tra URL ảnh thực tế trả về `200` và public không yêu cầu đăng nhập.
+`asset()` only generates a URL; it does not check whether the file exists. After deployment, verify that the actual image URL returns `200` and is publicly accessible without authentication.
 
 ---
 
-## 4. Chuẩn hóa text dùng cho SEO
+## 4. Normalizing text for SEO
 
-Tạo `app/SEO/SeoText.php`:
+Create `app/SEO/SeoText.php`:
 
 ```php
 <?php
@@ -187,15 +187,15 @@ final class SeoText
 }
 ```
 
-`160` chỉ là giới hạn biên tập hợp lý, không phải giới hạn bắt buộc của Google. Nếu description rỗng sau xử lý, `SeoFactory` nên dùng fallback mặc định.
+`160` is a reasonable editorial limit, not a mandatory Google limit. If the description is empty after processing, `SeoFactory` should use the default fallback.
 
 ---
 
 ## 5. Structured Data / JSON-LD
 
-Structured data giúp công cụ tìm kiếm hiểu loại nội dung của trang. Với bài viết, nên dùng `Article`, `BlogPosting` hoặc `NewsArticle` tùy loại nội dung.
+Structured data helps search engines understand the type of content on a page. For posts, use `Article`, `BlogPosting`, or `NewsArticle` as appropriate for the content.
 
-Tạo `app/SEO/Schema/ArticleSchema.php`:
+Create `app/SEO/Schema/ArticleSchema.php`:
 
 ```php
 <?php
@@ -236,17 +236,17 @@ final class ArticleSchema
 }
 ```
 
-Google không bắt buộc mọi property nhưng nên cung cấp các property phù hợp như `headline`, `image`, `datePublished`, `dateModified`, `author`.
+Google does not require every property, but you should provide relevant properties such as `headline`, `image`, `datePublished`, `dateModified`, and `author`.
 
-Nếu có ảnh nhiều tỷ lệ cho article, có thể cung cấp 1:1, 4:3 và 16:9 để hỗ trợ tốt hơn cho rich results.
+If article images are available in multiple aspect ratios, you can provide 1:1, 4:3, and 16:9 versions to better support rich results.
 
-Không nối chuỗi thủ công để tạo JSON-LD.
+Do not build JSON-LD by manually concatenating strings.
 
 ---
 
 ## 6. SeoFactory
 
-Tạo `app/SEO/SeoFactory.php`:
+Create `app/SEO/SeoFactory.php`:
 
 ```php
 <?php
@@ -283,8 +283,8 @@ final class SeoFactory
         $default = $this->default(route('home'));
 
         return new SeoData(
-            title: 'Trang chủ - ' . config('seo.site_name'),
-            description: 'Giới thiệu dịch vụ chính và lợi ích dành cho khách hàng.',
+            title: 'Home - ' . config('seo.site_name'),
+            description: 'An introduction to our main services and customer benefits.',
             canonical: route('home'),
             image: $default->image,
             type: 'website',
@@ -307,17 +307,17 @@ final class SeoFactory
         $default = $this->default($canonical);
 
         return new SeoData(
-            title: 'Bài viết'
-                . ($page > 1 ? ' - Trang ' . $page : '')
+            title: 'Posts'
+                . ($page > 1 ? ' - Page ' . $page : '')
                 . ' - ' . config('seo.site_name'),
-            description: 'Các bài viết và thông tin mới nhất từ doanh nghiệp.',
+            description: 'The latest posts and updates from our business.',
             canonical: $canonical,
             image: $default->image,
             type: 'website',
             robots: $default->robots,
             locale: $default->locale,
             siteName: $default->siteName,
-            imageAlt: 'Bài viết - ' . config('seo.site_name'),
+            imageAlt: 'Posts - ' . config('seo.site_name'),
             twitterCard: $default->twitterCard,
             twitterSite: $default->twitterSite,
         );
@@ -357,13 +357,13 @@ final class SeoFactory
 }
 ```
 
-Nếu dùng S3/CDN hoặc model đã lưu URL tuyệt đối, thay logic tạo `$image` bằng URL public của hệ thống. Không đưa đường dẫn nội bộ như `storage/app/...` vào `og:image`, không dùng URL có auth/token ngắn hạn cho ảnh chia sẻ lâu dài.
+If you use S3/CDN or the model already stores an absolute URL, replace the `$image` generation logic with the public URL provided by your system. Do not put internal paths such as `storage/app/...` in `og:image`, and do not use URLs requiring authentication or short-lived tokens for images intended for long-term sharing.
 
 ---
 
 ## 7. Route model binding
 
-Thay query slug thủ công bằng route model binding.
+Replace manual slug queries with route model binding.
 
 `routes/web.php`:
 
@@ -384,9 +384,9 @@ Route::get('/bai-viet/{post:slug}', [PostController::class, 'show'])
     ->name('posts.show');
 ```
 
-Laravel tự trả `404` nếu không tìm thấy model tương ứng.
+Laravel automatically returns `404` if the corresponding model is not found.
 
-Có thể thay `{post:slug}` bằng `{post}` nếu model khai báo:
+You can replace `{post:slug}` with `{post}` if the model declares:
 
 ```php
 public function getRouteKeyName(): string
@@ -434,7 +434,7 @@ class PostController extends Controller
     public function index(SeoFactory $seoFactory)
     {
         $posts = Post::query()
-            // Bổ sung điều kiện published theo schema thực tế.
+            // Add a published condition based on the actual schema.
             ->orderByDesc('id')
             ->paginate(10);
 
@@ -448,7 +448,7 @@ class PostController extends Controller
 
     public function show(Post $post, SeoFactory $seoFactory)
     {
-        // Nếu có author dùng cho schema, eager-load trước khi build SEO.
+        // If the schema uses an author, eager-load it before building SEO data.
         // $post->loadMissing('author');
 
         return view('posts.show', [
@@ -459,13 +459,13 @@ class PostController extends Controller
 }
 ```
 
-Nếu trang chỉ được truy cập khi published/có quyền, route binding hoặc controller vẫn phải áp dụng cùng scope/quyền như business logic hiện tại. Không vì SEO mà vô tình cho phép truy cập bản nháp/private.
+If a page is accessible only when published or with appropriate permissions, route binding or the controller must apply the same scopes and permissions as the existing business logic. SEO changes must not accidentally allow access to drafts or private content.
 
 ---
 
-## 9. Blade component SEO
+## 9. SEO Blade component
 
-Tạo `app/View/Components/Seo.php`:
+Create `app/View/Components/Seo.php`:
 
 ```php
 <?php
@@ -490,7 +490,7 @@ class Seo extends Component
 }
 ```
 
-Tạo `resources/views/components/seo.blade.php`:
+Create `resources/views/components/seo.blade.php`:
 
 ```blade
 <title>{{ $seo->title }}</title>
@@ -554,9 +554,9 @@ Tạo `resources/views/components/seo.blade.php`:
 @endforeach
 ```
 
-Không dùng `{!! ... !!}` cho title/description/OG. Riêng JSON-LD cần raw JSON nhưng phải encode bằng `json_encode()` với các `JSON_HEX_*` flags như trên; không chèn JSON do người dùng cung cấp trực tiếp.
+Do not use `{!! ... !!}` for title, description, or OG metadata. JSON-LD requires raw JSON, but it must be encoded with `json_encode()` using the `JSON_HEX_*` flags shown above; do not insert user-supplied JSON directly.
 
-Chỉ khai báo `og:image:width`/`height` khi biết đúng kích thước của ảnh. Không hard-code `1200x630` nếu ảnh động có thể khác kích thước.
+Only declare `og:image:width`/`height` when the actual image dimensions are known. Do not hard-code `1200x630` if dynamically selected images may have different dimensions.
 
 ---
 
@@ -583,13 +583,13 @@ Chỉ khai báo `og:image:width`/`height` khi biết đúng kích thước của
 </html>
 ```
 
-Nếu muốn tránh gọi service container trong Blade, có thể yêu cầu mọi controller truyền `$seo`. Tuy nhiên fallback trên hữu ích cho các trang cũ trong quá trình migration.
+To avoid calling the service container from Blade, you can require every controller to pass `$seo`. However, the fallback above is useful for existing pages during migration.
 
-Nếu dự án đã có `<title>`, meta description, OG hoặc canonical cũ, phải xóa/di chuyển sang component này để mỗi trang chỉ render một bộ metadata.
+If the project already has `<title>`, meta description, OG, or canonical tags, remove them or move them into this component so that each page renders only one set of metadata.
 
 ---
 
-## 11. View nội dung
+## 11. Content views
 
 `resources/views/home.blade.php`:
 
@@ -607,7 +607,7 @@ Nếu dự án đã có `<title>`, meta description, OG hoặc canonical cũ, ph
 @extends('layouts.app')
 
 @section('content')
-    <h1>Bài viết</h1>
+    <h1>Posts</h1>
 
     @foreach ($posts as $post)
         <a href="{{ route('posts.show', $post) }}">
@@ -627,41 +627,41 @@ Nếu dự án đã có `<title>`, meta description, OG hoặc canonical cũ, ph
 @section('content')
     <article>
         <h1>{{ $post->title }}</h1>
-        {{-- Nội dung bài viết --}}
+        {{-- Post content --}}
     </article>
 @endsection
 ```
 
-View con không tạo thêm title/meta riêng nếu layout đã dùng `<x-seo>`.
+Child views should not add their own title or meta tags if the layout already uses `<x-seo>`.
 
 ---
 
 ## 12. Canonical URL
 
-Nguyên tắc:
+Guidelines:
 
-| Loại trang | Canonical khuyến nghị |
+| Page type | Recommended canonical |
 | --- | --- |
-| Trang chủ | `route('home')` |
-| Trang tĩnh | Route chuẩn của trang |
-| Chi tiết bài viết | Route chứa slug của bài viết |
-| Chi tiết sản phẩm | Route chi tiết sản phẩm |
-| Pagination page 1 | URL không có `?page=1` |
-| Pagination page 2+ | Self-canonical có `?page=N` |
-| Tracking params | Canonical loại `utm_*`, `fbclid`, `gclid` nếu nội dung không đổi |
-| Search/filter | Theo policy sản phẩm; không tự động canonical tất cả về một URL |
+| Home page | `route('home')` |
+| Static page | Canonical route for the page |
+| Post detail | Route containing the post slug |
+| Product detail | Product detail route |
+| Pagination page 1 | URL without `?page=1` |
+| Pagination page 2+ | Self-canonical with `?page=N` |
+| Tracking params | Canonical excludes `utm_*`, `fbclid`, and `gclid` if the content is unchanged |
+| Search/filter | Follow product policy; do not automatically canonicalize everything to one URL |
 
-Không tự động xóa mọi query string. Một số query thay đổi nội dung thật sự.
+Do not automatically remove all query strings. Some queries genuinely change the content.
 
-`url()->current()` không gồm query string nên phù hợp làm fallback. Với pagination/search/filter, controller/SeoFactory phải tạo canonical rõ ràng.
+`url()->current()` excludes the query string, making it suitable as a fallback. For pagination, search, and filters, the controller or SeoFactory must explicitly build the canonical URL.
 
-Không canonical page 2 về page 1 nếu page 2 chứa tập nội dung khác.
+Do not canonicalize page 2 to page 1 if page 2 contains a different set of content.
 
 ---
 
 ## 13. Pagination
 
-Mẫu trong `SeoFactory::postsIndex()` dùng:
+The example in `SeoFactory::postsIndex()` uses:
 
 ```text
 /bai-viet
@@ -669,20 +669,20 @@ Mẫu trong `SeoFactory::postsIndex()` dùng:
 /bai-viet?page=3
 ```
 
-và mỗi trang tự canonical về chính nó.
+and each page uses its own URL as the canonical.
 
-Không cần thêm `rel="next"`/`rel="prev"` chỉ để Google xử lý pagination; tập trung vào link HTML crawlable và canonical hợp lý.
+You do not need to add `rel="next"`/`rel="prev"` solely for Google to handle pagination; focus on crawlable HTML links and appropriate canonical URLs.
 
 ---
 
-## 14. Search và filter pages
+## 14. Search and filter pages
 
-Ví dụ search route:
+Example for a search route:
 
 ```php
 $seo = new SeoData(
-    title: 'Tìm kiếm: ' . $query,
-    description: 'Kết quả tìm kiếm cho: ' . $query,
+    title: 'Search: ' . $query,
+    description: 'Search results for: ' . $query,
     canonical: route('search', ['query' => $query]),
     image: asset(config('seo.default_image')),
     robots: 'noindex,follow',
@@ -691,22 +691,22 @@ $seo = new SeoData(
 );
 ```
 
-`noindex,follow` là policy phổ biến cho search nội bộ, không phải luật bắt buộc. Nếu filter/search page là landing page SEO có nội dung ổn định và có giá trị, có thể cho index.
+`noindex,follow` is a common policy for internal search, not a mandatory rule. If a filter or search page serves as an SEO landing page with stable, valuable content, you can allow it to be indexed.
 
 ---
 
-## 15. Hreflang cho website đa ngôn ngữ
+## 15. Hreflang for multilingual websites
 
-Nếu website chỉ có một ngôn ngữ, bỏ qua phần này.
+If the website has only one language, skip this section.
 
-Nếu có các URL tương đương:
+If equivalent URLs exist:
 
 ```text
 /vi/san-pham/abc
 /en/products/abc
 ```
 
-truyền:
+pass:
 
 ```php
 alternates: [
@@ -716,7 +716,7 @@ alternates: [
 ],
 ```
 
-Component sẽ render:
+The component will render:
 
 ```html
 <link rel="alternate" hreflang="vi" href="...">
@@ -724,21 +724,21 @@ Component sẽ render:
 <link rel="alternate" hreflang="x-default" href="...">
 ```
 
-Các URL alternate nên trỏ qua lại nhất quán giữa các phiên bản ngôn ngữ.
+Alternate URLs should consistently reference one another across language versions.
 
 ---
 
-## 16. Sitemap và robots.txt
+## 16. Sitemap and robots.txt
 
-Meta robots và `robots.txt` không thay thế nhau.
+Meta robots and `robots.txt` do not replace one another.
 
-- `meta robots` điều khiển index/follow ở mức trang;
-- `robots.txt` chủ yếu điều khiển crawling;
-- sitemap giúp liệt kê URL canonical quan trọng cần discovery.
+- `meta robots` controls index/follow at the page level;
+- `robots.txt` primarily controls crawling;
+- a sitemap lists important canonical URLs for discovery.
 
-### robots.txt tối thiểu
+### Minimal robots.txt
 
-`public/robots.txt` production:
+Production `public/robots.txt`:
 
 ```text
 User-agent: *
@@ -747,99 +747,99 @@ Allow: /
 Sitemap: https://www.example.com/sitemap.xml
 ```
 
-Staging có thể dùng:
+Staging can use:
 
 ```text
 User-agent: *
 Disallow: /
 ```
 
-nhưng vẫn nên giữ `SEO_ROBOTS=noindex,nofollow` như lớp bảo vệ bổ sung. Không dựa chỉ vào `robots.txt` để yêu cầu de-index một URL đã được biết đến.
+but you should still keep `SEO_ROBOTS=noindex,nofollow` as an additional safeguard. Do not rely solely on `robots.txt` to request removal of an already known URL from the index.
 
 ### Sitemap
 
-Có thể tự tạo route/controller XML hoặc dùng package nếu website có nhiều loại resource. Sitemap chỉ nên chứa URL canonical, public, indexable.
+You can create an XML route/controller yourself or use a package if the website has many resource types. The sitemap should contain only canonical, public, indexable URLs.
 
 ---
 
-## 17. View Composer: khi nào dùng
+## 17. View Composer: when to use it
 
-Laravel View Composer hợp lý cho dữ liệu global như:
+Laravel View Composers are appropriate for global data such as:
 
 - site name;
-- organization schema chung;
-- locale mặc định;
+- shared organization schema;
+- default locale;
 - navigation/footer data.
 
-Không khuyến nghị dùng View Composer để quyết định SEO dynamic của Post/Product vì dependency bị ẩn và khó trace hơn `Controller → SeoFactory → View`.
+Using a View Composer to determine dynamic SEO for Post/Product pages is not recommended because dependencies are hidden and harder to trace than with `Controller → SeoFactory → View`.
 
 ---
 
-## 18. Khi nào dùng SEO package
+## 18. When to use an SEO package
 
-Tự implement như tài liệu này phù hợp khi cần:
+A custom implementation like the one in this guide is suitable when you need:
 
 - title/description;
 - canonical;
 - OG/Twitter;
 - JSON-LD;
 - hreflang;
-- sitemap đơn giản.
+- a simple sitemap.
 
-Cân nhắc package nếu có:
+Consider a package if you have:
 
-- CMS chỉnh SEO fields từ admin;
-- sitemap rất lớn/nhiều nguồn;
-- nhiều loại JSON-LD phức tạp;
-- tự sinh OG image;
-- hệ thống hreflang lớn;
-- SEO audit hoặc model traits dùng rộng khắp.
+- a CMS with editable SEO fields in the admin interface;
+- a very large sitemap or multiple sources;
+- many complex JSON-LD types;
+- automatic OG image generation;
+- a large hreflang system;
+- SEO audits or model traits used throughout the application.
 
-Không nên thêm dependency chỉ để thay vài thẻ meta đơn giản.
+Do not add a dependency just to replace a few simple meta tags.
 
 ---
 
-## 19. Reverse proxy, HTTPS và URL generation
+## 19. Reverse proxies, HTTPS, and URL generation
 
-`route()`, `asset()` và URL generation phụ thuộc host/scheme Laravel nhận từ request/cấu hình. `APP_URL` không tự sửa mọi lỗi khi app chạy sau load balancer/reverse proxy.
+`route()`, `asset()`, and URL generation depend on the host and scheme Laravel receives from the request or configuration. `APP_URL` does not automatically fix every issue when the app runs behind a load balancer or reverse proxy.
 
-Kiểm tra:
+Check:
 
 - trusted proxies;
 - forwarded headers;
 - HTTPS termination;
-- URL của CDN/storage disk;
+- CDN/storage disk URLs;
 - config cache;
-- canonical/OG image thực tế trong **View Page Source**.
+- the actual canonical and OG image URLs in **View Page Source**.
 
-Không chỉ kiểm tra DOM sau JavaScript; metadata SEO phải có trong HTML server trả về nếu website là Blade SSR như tài liệu này.
+Check more than the DOM after JavaScript runs; SEO metadata must be present in the HTML returned by the server for a Blade SSR website like the one in this guide.
 
 ---
 
-## 20. Storage image
+## 20. Images in storage
 
-Nếu Post image nằm trên local `public` disk:
+If post images are stored on the local `public` disk:
 
 ```sh
 php artisan storage:link
 ```
 
-Kiểm tra:
+Check:
 
 ```text
 /public/storage/...  → public
-/storage/app/public/... → không dùng trực tiếp làm URL meta
+/storage/app/public/... → do not use directly as a metadata URL
 ```
 
-Nếu dùng S3/CDN, `og:image` và Twitter image phải là URL public ổn định, không dùng pre-signed URL ngắn hạn trừ khi có chủ đích đặc biệt.
+If you use S3/CDN, `og:image` and the Twitter image must use stable public URLs. Avoid short-lived pre-signed URLs unless there is a specific intentional reason.
 
 ---
 
 ## 21. Automated tests
 
-SEO dễ regression vì UI thường vẫn hiển thị bình thường. Nên có Feature Tests.
+SEO is prone to regressions because the UI often still looks normal. Add feature tests.
 
-Ví dụ `tests/Feature/PostSeoTest.php`:
+Example `tests/Feature/PostSeoTest.php`:
 
 ```php
 <?php
@@ -889,25 +889,25 @@ class PostSeoTest extends TestCase
 }
 ```
 
-Nên có test cho:
+Include tests for:
 
 - default fallback;
-- canonical đúng slug;
-- `?page=2` self-canonical;
-- page 1 không canonical thành `?page=1`;
-- noindex trên staging/config tương ứng;
-- HTML trong description được strip;
-- ký tự `&`, `'`, `"`, Unicode được escape đúng;
-- JSON-LD encode đúng;
-- ảnh fallback;
-- trang không tồn tại trả 404;
-- không render duplicate title/meta/canonical.
+- canonical URLs using the correct slug;
+- self-canonical URLs with `?page=2`;
+- page 1 canonical URLs excluding `?page=1`;
+- noindex on staging or with the corresponding configuration;
+- HTML being stripped from descriptions;
+- characters `&`, `'`, `"`, and Unicode being escaped correctly;
+- correct JSON-LD encoding;
+- fallback images;
+- nonexistent pages returning 404;
+- no duplicate title/meta/canonical tags being rendered.
 
 ---
 
-## 22. Validation và kiểm thử external
+## 22. Validation and external testing
 
-Sau khi deploy:
+After deployment:
 
 ```sh
 php artisan route:list
@@ -915,74 +915,74 @@ php artisan config:cache
 php artisan view:cache
 ```
 
-Nếu dự án dùng route cache:
+If the project uses route caching:
 
 ```sh
 php artisan route:cache
 ```
 
-Các kiểm tra nên thực hiện:
+Recommended checks:
 
-- **View Page Source**: metadata có trong HTML server trả về;
-- canonical/og:url dùng đúng HTTPS/domain;
-- OG image public và trả status thành công;
-- Rich Results Test cho JSON-LD;
-- URL Inspection/Search Console khi cần;
-- social sharing debugger phù hợp nền tảng nếu preview sai;
-- sitemap trả XML hợp lệ và chỉ chứa canonical URLs.
-
----
-
-## 23. Checklist nghiệm thu
-
-- [ ] Trang chủ, list, detail render thành công.
-- [ ] Slug không tồn tại trả 404.
-- [ ] Mỗi page có đúng một `<title>`.
-- [ ] Mỗi page có đúng một meta description.
-- [ ] Mỗi page có đúng một canonical.
-- [ ] `og:title`, `og:description`, `og:type`, `og:url`, `og:image` đúng.
-- [ ] Twitter/X Card đúng.
-- [ ] `og:site_name`, `og:locale`, `og:image:alt` đúng nếu được cấu hình.
-- [ ] `og:image:width/height` chỉ render khi có dữ liệu chính xác.
-- [ ] Article page có JSON-LD hợp lệ.
-- [ ] Description không chứa markup HTML.
-- [ ] Canonical và image dùng absolute URL.
-- [ ] Page 2 có `?page=2`; page 1 không có `?page=1`.
-- [ ] Tracking query không làm canonical thay đổi khi nội dung không đổi.
-- [ ] Search/filter có policy index/noindex rõ ràng.
-- [ ] Staging/dev có `noindex,nofollow` theo config.
-- [ ] `robots.txt` phù hợp môi trường.
-- [ ] sitemap chỉ chứa public canonical URLs.
-- [ ] hreflang đúng nếu multilingual.
-- [ ] Không có duplicate metadata từ layout/plugin cũ.
-- [ ] Reverse proxy không làm URL thành HTTP hoặc sai domain.
-- [ ] Feature tests SEO chạy pass.
+- **View Page Source**: metadata is present in the HTML returned by the server;
+- canonical/og:url uses the correct HTTPS scheme and domain;
+- the OG image is public and returns a successful status;
+- Rich Results Test for JSON-LD;
+- URL Inspection/Search Console when needed;
+- the appropriate social sharing debugger for the platform if the preview is incorrect;
+- the sitemap returns valid XML and contains only canonical URLs.
 
 ---
 
-## 24. Lỗi thường gặp
+## 23. Acceptance checklist
 
-| Triệu chứng | Nguyên nhân / cách xử lý |
+- [ ] Home, listing, and detail pages render successfully.
+- [ ] A nonexistent slug returns 404.
+- [ ] Each page has exactly one `<title>`.
+- [ ] Each page has exactly one meta description.
+- [ ] Each page has exactly one canonical.
+- [ ] `og:title`, `og:description`, `og:type`, `og:url`, and `og:image` are correct.
+- [ ] Twitter/X Card metadata is correct.
+- [ ] `og:site_name`, `og:locale`, and `og:image:alt` are correct when configured.
+- [ ] `og:image:width/height` is rendered only when accurate data is available.
+- [ ] Article pages have valid JSON-LD.
+- [ ] Descriptions contain no HTML markup.
+- [ ] Canonical and image URLs are absolute.
+- [ ] Page 2 includes `?page=2`; page 1 excludes `?page=1`.
+- [ ] Tracking queries do not change the canonical when the content is unchanged.
+- [ ] Search/filter pages have a clear index/noindex policy.
+- [ ] Staging/development uses `noindex,nofollow` according to configuration.
+- [ ] `robots.txt` matches the environment.
+- [ ] The sitemap contains only public canonical URLs.
+- [ ] hreflang is correct for multilingual sites.
+- [ ] There is no duplicate metadata from an old layout or plugin.
+- [ ] The reverse proxy does not cause URLs to use HTTP or the wrong domain.
+- [ ] SEO feature tests pass.
+
+---
+
+## 24. Common issues
+
+| Symptom | Cause / resolution |
 | --- | --- |
-| `Route [...] not defined` | Kiểm tra `php artisan route:list`; sửa route name |
-| 404 với `{post:slug}` | Slug không tồn tại, route binding không match hoặc global scope loại model |
-| Ảnh share không tải | Kiểm tra storage link, disk URL, CDN, permission và fallback |
-| `og:image` là relative URL | Dùng `asset()`, `url()` hoặc URL CDN tuyệt đối |
-| Canonical của detail trỏ về list | Dùng route detail với model/slug |
-| Page 2 canonical về page 1 | Tạo self-canonical theo page hiện tại |
-| Domain/scheme sai | Kiểm tra trusted proxies, forwarded headers, APP_URL, CDN, config cache |
-| Staging xuất hiện trên Google | `SEO_ROBOTS` sai, robots.txt sai hoặc staging từng được index trước đó |
-| JSON-LD lỗi | Không nối JSON thủ công; dùng `json_encode()` và validate bằng Rich Results Test |
-| Duplicate title/meta | Xóa block cũ hoặc package/component đang render song song |
-| `.env` đổi nhưng output không đổi | Clear/rebuild config cache theo deployment process |
-| Description chứa HTML | Dùng `SeoText::description()` |
-| Twitter preview khác OG | Kiểm tra `twitter:*` fields và cache của nền tảng |
+| `Route [...] not defined` | Check `php artisan route:list`; fix the route name |
+| 404 with `{post:slug}` | The slug does not exist, route binding does not match, or a global scope excludes the model |
+| Shared image does not load | Check the storage link, disk URL, CDN, permissions, and fallback |
+| `og:image` is a relative URL | Use `asset()`, `url()`, or an absolute CDN URL |
+| Detail page canonical points to the listing | Use the detail route with the model/slug |
+| Page 2 canonical points to page 1 | Build a self-canonical URL for the current page |
+| Incorrect domain/scheme | Check trusted proxies, forwarded headers, APP_URL, CDN, and config cache |
+| Staging appears on Google | Incorrect `SEO_ROBOTS`, incorrect robots.txt, or staging was previously indexed |
+| Invalid JSON-LD | Do not concatenate JSON manually; use `json_encode()` and validate with Rich Results Test |
+| Duplicate title/meta | Remove the old block or the package/component rendering duplicate metadata |
+| `.env` changes but output stays the same | Clear/rebuild the config cache according to the deployment process |
+| Description contains HTML | Use `SeoText::description()` |
+| Twitter preview differs from OG | Check `twitter:*` fields and the platform cache |
 
 ---
 
-## 25. Quyết định kiến trúc cuối cùng
+## 25. Final architecture decision
 
-### Khuyến nghị mặc định
+### Default recommendation
 
 ```text
 Controller
@@ -996,23 +996,23 @@ Controller
               → JSON-LD
 ```
 
-### Không khuyến nghị làm kiến trúc chính
+### Not recommended as the primary architecture
 
 ```text
-Controller tự build $meta array ở mọi action
+Controller builds its own $meta array in every action
 ```
 
-vì logic SEO dễ bị lặp, khó refactor và khó type-check.
+because SEO logic is easily duplicated and is harder to refactor and type-check.
 
-### Có thể dùng bổ trợ
+### Optional supporting tools
 
-- View Composer: cho dữ liệu SEO global;
-- package SEO: khi CMS/schema/sitemap/hreflang phức tạp;
-- custom schema builders: khi có Product, BreadcrumbList, Organization, LocalBusiness...
+- View Composer: for global SEO data;
+- SEO package: when CMS/schema/sitemap/hreflang requirements are complex;
+- custom schema builders: for Product, BreadcrumbList, Organization, LocalBusiness, etc.
 
 ---
 
-## 26. Nguồn tham khảo
+## 26. References
 
 - Laravel 13 documentation / release notes: https://laravel.com/framework/docs/releases
 - Laravel URL generation: https://laravel.com/docs/13.x/urls
@@ -1026,15 +1026,15 @@ vì logic SEO dễ bị lặp, khó refactor và khó type-check.
 
 ---
 
-## 27. Ghi chú migration từ implementation cũ
+## 27. Migration notes for an existing implementation
 
-Nếu dự án hiện tại đã dùng `$meta` array:
+If the current project already uses a `$meta` array:
 
-1. tạo `SeoData`, `SeoFactory`, `<x-seo>` trước;
-2. giữ fallback trong layout để các trang cũ vẫn hoạt động;
-3. migrate từng controller sang `SeoFactory`;
-4. xóa partial `$meta` cũ khi không còn page sử dụng;
-5. chạy test để phát hiện duplicate metadata;
-6. kiểm tra source HTML trên staging trước production.
+1. create `SeoData`, `SeoFactory`, and `<x-seo>` first;
+2. keep a fallback in the layout so existing pages continue to work;
+3. migrate each controller to `SeoFactory`;
+4. remove the old `$meta` partial once no pages use it;
+5. run tests to detect duplicate metadata;
+6. check the HTML source on staging before production.
 
-Không cần migrate tất cả page trong một lần nếu dự án lớn, miễn layout chỉ render một implementation SEO tại mỗi request.
+For a large project, you do not need to migrate every page at once, as long as the layout renders only one SEO implementation per request.
