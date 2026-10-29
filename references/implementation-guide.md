@@ -266,9 +266,11 @@ final class SeoFactory
         ?string $image = null,
         bool $noindex = false,
     ): SeoData {
-        $robots = $noindex
-            ? 'noindex,follow'
-            : config('seo.robots');
+        $robots = config('seo.robots');
+
+        if ($robots === 'index,follow' && $noindex) {
+            $robots = 'noindex,follow';
+        }
 
         return new SeoData(
             title: $title,
@@ -384,9 +386,9 @@ final class SeoFactory
 
 ### Per-page robots policy
 
-Page robots default to `config('seo.robots')`. The `page()` builder supports `bool $noindex = false`; apply the same contract to other page builders when exposing this override. Omission or `false` preserves config unchanged. `true` unconditionally replaces the **entire** robots value with `noindex,follow`, including replacing `nofollow` from config with `follow`. This is intentional behavior, even when config already contains `noindex`.
+Page robots default to `config('seo.robots')`. The `page()` builder supports `bool $noindex = false`; apply the same contract to other page builders when exposing this override. Omission or `false` preserves config unchanged. Only when config is exactly `index,follow` does `true` change robots to `noindex,follow`. Every other configured value remains unchanged regardless of `$noindex`. Use strict equality without normalizing whitespace, case, or directive order.
 
-Do not inspect config for an existing `noindex` before overriding. Do not couple the override to page types such as `$catalog` or sample-data states such as `reference_data`. Private pages may continue to use a separate `noindex,nofollow` policy.
+The parameter expresses noindex intent. Do not couple the override to page types such as `$catalog` or sample-data states such as `reference_data`. Private pages may continue to use a separate `noindex,nofollow` policy.
 
 Prefer named arguments to make the caller's intent clear (adapt the route to the project):
 
@@ -404,11 +406,15 @@ Required test matrix:
 | Config | `$noindex` | Resulting robots |
 | --- | --- | --- |
 | `index,follow` | `false` | `index,follow` |
+| `index,follow` | `true` | `noindex,follow` |
 | `index,nofollow` | `false` | `index,nofollow` |
+| `index,nofollow` | `true` | `index,nofollow` |
+| `noindex,follow` | `false` | `noindex,follow` |
+| `noindex,follow` | `true` | `noindex,follow` |
 | `noindex,nofollow` | `false` | `noindex,nofollow` |
-| Any value | `true` | `noindex,follow` |
+| `noindex,nofollow` | `true` | `noindex,nofollow` |
 
-Also test omitted `$noindex` against the configured values. For the `true` case, cover all three listed configurations and another configured value to verify unconditional replacement.
+Also test omitted `$noindex` against the configured values. Cover a non-exact value such as `index, follow` to verify it is preserved. Feature tests must verify the effective robots value in server-rendered HTML and exactly one `meta[name="robots"]` element in the document.
 
 If you use S3/CDN or the model already stores an absolute URL, replace the `$image` generation logic with the public URL provided by your system. Do not put internal paths such as `storage/app/...` in `og:image`, and do not use URLs requiring authentication or short-lived tokens for images intended for long-term sharing.
 
@@ -742,7 +748,7 @@ $seo = SeoFactory::page(
 );
 ```
 
-`noindex,follow` is a common policy for internal search, not a mandatory rule. If a filter or search page serves as an SEO landing page with stable, valuable content, you can allow it to be indexed.
+With config exactly `index,follow`, this example produces `noindex,follow`; all other configured values are preserved. `noindex,follow` is a common policy for internal search, not a mandatory rule. If a filter or search page serves as an SEO landing page with stable, valuable content, you can allow it to be indexed.
 
 ---
 
@@ -809,9 +815,9 @@ but you should still keep `SEO_ROBOTS=noindex,nofollow` as an additional safegua
 
 ### Sitemap
 
-You can create an XML route/controller yourself or use a package if the website has many resource types. The sitemap should contain only canonical, public, indexable URLs. Exclude every noindex page, including pages using `noindex: true` and pages inheriting noindex from config. Use the effective page indexing policy when selecting sitemap entries so it stays consistent with rendered metadata.
+You can create an XML route/controller yourself or use a package if the website has many resource types. The sitemap should contain only canonical, public, indexable URLs. Exclude every noindex page, including pages effectively changed to noindex by `noindex: true`, pages inheriting noindex from config, and private pages with a separate noindex policy. A `noindex: true` argument alone does not determine sitemap exclusion when config prevents the override. Use the effective page indexing policy when selecting sitemap entries so it stays consistent with rendered metadata.
 
-In environments that allow crawling, do not disallow these noindex URLs in `robots.txt`; crawlers need to fetch them to read the noindex directive. The staging-wide crawl block above is a separate environment policy and can prevent crawlers from reading page metadata.
+In environments that allow crawling, do not disallow these noindex URLs in `robots.txt`; crawlers need to fetch them to read the noindex directive. Preserve any existing environment-wide crawl block, such as the staging policy above; it is separate from per-page noindex and can prevent crawlers from reading page metadata.
 
 ---
 
@@ -948,7 +954,8 @@ Include tests for:
 - canonical URLs using the correct slug;
 - self-canonical URLs with `?page=2`;
 - page 1 canonical URLs excluding `?page=1`;
-- the per-page robots matrix in section 6, including omitted `$noindex` and overriding configured `nofollow` to `follow`;
+- the per-page robots matrix in section 6, including omitted `$noindex` and preserving every config other than exact `index,follow`;
+- exactly one robots meta tag with the effective value in server-rendered HTML;
 - noindex on staging or with the corresponding configuration;
 - noindex URLs absent from sitemap and not blocked by robots.txt in environments that allow crawling;
 - HTML being stripped from descriptions;
@@ -1005,7 +1012,8 @@ Recommended checks:
 - [ ] Page 2 includes `?page=2`; page 1 excludes `?page=1`.
 - [ ] Tracking queries do not change the canonical when the content is unchanged.
 - [ ] Search/filter pages have a clear index/noindex policy.
-- [ ] Omitted/false `$noindex` preserves config; true always produces `noindex,follow`, even from `noindex,nofollow`.
+- [ ] Omitted/false `$noindex` preserves config; true changes only exact `index,follow` to `noindex,follow`; all other configs remain unchanged.
+- [ ] Server-rendered HTML contains exactly one robots meta tag with the effective value.
 - [ ] Staging/development defaults to `noindex,nofollow` according to configuration; explicit per-page overrides follow section 6.
 - [ ] `robots.txt` matches the environment.
 - [ ] The sitemap contains only public, canonical, indexable URLs and excludes all noindex pages.

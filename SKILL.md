@@ -217,11 +217,12 @@ Prefer an explicit SEO variable over inferring everything from `APP_ENV`.
 Default page robots must come from `config('seo.robots')`. SEO factory page builders must support `bool $noindex = false`:
 
 - Omitted or `false`: preserve the configured robots value unchanged.
-- `true`: unconditionally replace the entire robots value with `noindex,follow`, including changing configured `nofollow` to `follow`. This is intentional.
-- Do not check whether config already contains `noindex` before overriding, or couple this rule to page types such as `$catalog` or sample-data states such as `reference_data`.
+- Only when config is exactly `index,follow`, `true` changes robots to `noindex,follow`.
+- Any other configured value remains unchanged for both boolean values. Use strict equality; do not normalize or reorder directives before comparing.
+- The parameter expresses noindex intent; do not couple it to page types such as `$catalog` or sample-data states such as `reference_data`.
 - Prefer a named argument (`noindex: true`) at call sites. Private pages may retain a separate `noindex,nofollow` policy.
 
-Exclude all noindex pages from the sitemap. In environments that allow crawling, do not block these URLs in `robots.txt`: crawlers must be able to read their noindex directive.
+Exclude all noindex pages from the sitemap. In environments that allow crawling, do not block these URLs in `robots.txt`: crawlers must be able to read their noindex directive. Preserve any existing environment-wide crawl-blocking policy.
 
 Remember: meta robots and `robots.txt` serve different purposes. Do not claim they are interchangeable. See the implementation guide for the factory example and required test matrix.
 
@@ -265,7 +266,8 @@ Add feature/unit tests appropriate to the change. Cover important cases such as:
 - pagination canonical
 - fallback metadata
 - HTML escaping
-- configured robots preserved when `$noindex` is omitted or false; unconditional `noindex,follow` when true (including configured `nofollow`)
+- robots matrix: `index,follow` changes only for `$noindex = true`; `index,nofollow`, `noindex,follow`, and `noindex,nofollow` stay unchanged for both boolean values; omitted `$noindex` preserves config
+- exactly one robots meta tag with the effective value in server-rendered HTML
 - noindex pages excluded from sitemap and crawlable in environments that allow crawling
 - no duplicate metadata renderer
 
@@ -284,7 +286,8 @@ Before finishing an implementation or code review, verify:
 - [ ] description contains plain text, not editor markup
 - [ ] dynamic metadata is escaped
 - [ ] JSON-LD is valid JSON and matches visible content
-- [ ] default robots comes from config; `noindex: true` always replaces it with `noindex,follow`
+- [ ] default robots comes from config; `noindex: true` changes only exact `index,follow` to `noindex,follow`
+- [ ] server-rendered HTML contains exactly one robots meta tag with the effective value
 - [ ] noindex URLs are excluded from sitemap and remain crawlable where crawling is allowed
 - [ ] staging/dev cannot be indexed when policy says noindex
 - [ ] production does not accidentally inherit noindex
