@@ -212,7 +212,18 @@ SEO_ROBOTS=noindex,nofollow
 
 Prefer an explicit SEO variable over inferring everything from `APP_ENV`.
 
-Remember: meta robots and `robots.txt` serve different purposes. Do not claim they are interchangeable.
+#### Per-page robots override
+
+Default page robots must come from `config('seo.robots')`. SEO factory page builders must support `bool $noindex = false`:
+
+- Omitted or `false`: preserve the configured robots value unchanged.
+- `true`: unconditionally replace the entire robots value with `noindex,follow`, including changing configured `nofollow` to `follow`. This is intentional.
+- Do not check whether config already contains `noindex` before overriding, or couple this rule to page types such as `$catalog` or sample-data states such as `reference_data`.
+- Prefer a named argument (`noindex: true`) at call sites. Private pages may retain a separate `noindex,nofollow` policy.
+
+Exclude all noindex pages from the sitemap. In environments that allow crawling, do not block these URLs in `robots.txt`: crawlers must be able to read their noindex directive.
+
+Remember: meta robots and `robots.txt` serve different purposes. Do not claim they are interchangeable. See the implementation guide for the factory example and required test matrix.
 
 ### 8. Canonical rules
 
@@ -254,7 +265,8 @@ Add feature/unit tests appropriate to the change. Cover important cases such as:
 - pagination canonical
 - fallback metadata
 - HTML escaping
-- noindex policy where required
+- configured robots preserved when `$noindex` is omitted or false; unconditional `noindex,follow` when true (including configured `nofollow`)
+- noindex pages excluded from sitemap and crawlable in environments that allow crawling
 - no duplicate metadata renderer
 
 Prefer stable semantic assertions. Avoid brittle full-document snapshots unless the project already uses them.
@@ -272,6 +284,8 @@ Before finishing an implementation or code review, verify:
 - [ ] description contains plain text, not editor markup
 - [ ] dynamic metadata is escaped
 - [ ] JSON-LD is valid JSON and matches visible content
+- [ ] default robots comes from config; `noindex: true` always replaces it with `noindex,follow`
+- [ ] noindex URLs are excluded from sitemap and remain crawlable where crawling is allowed
 - [ ] staging/dev cannot be indexed when policy says noindex
 - [ ] production does not accidentally inherit noindex
 - [ ] reverse proxy does not generate HTTP or wrong-domain URLs
